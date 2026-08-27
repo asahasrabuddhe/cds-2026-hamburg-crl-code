@@ -1,0 +1,17 @@
+# Build output. Anchored, because an unanchored "nsdemo" also matches the
+# cmd/nsdemo source directory.
+/nsdemo
+
+# QEMU working files. The definition in qemu/vm.sh is committed; everything it
+# generates or downloads is not, because vm.sh rebuilds all of it from the
+# pinned image and checksum.
+qemu/*.img
+qemu/*.qcow2
+qemu/*.iso
+qemu/*.fd
+qemu/seed-*/
+qemu/*-console.log
+qemu/*.pid
+qemu/crl_key
+qemu/crl_key.pub
+qemu/ssh_config
