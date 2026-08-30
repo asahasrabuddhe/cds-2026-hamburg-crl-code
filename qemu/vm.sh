@@ -272,8 +272,12 @@ push() {
   write_ssh_config
 
   # qemu/ is excluded because it is several gigabytes of disk image, and .git/
-  # because nothing in the VM reads the history.
-  tar -cf - -C .. --exclude './.git' --exclude './qemu' . \
+  # because nothing in the VM reads the history. The two --no- flags drop the
+  # macOS extended attributes, which GNU tar in the guest cannot read and warns
+  # about once per file. Warnings that mean nothing are worse than no output at
+  # all when you run this in front of a room.
+  tar --no-xattrs --no-mac-metadata -cf - -C .. \
+      --exclude './.git' --exclude './qemu' . \
     | ssh -F ssh_config "crl-$variant" \
         'rm -rf ~/crl && mkdir -p ~/crl && tar -xf - -C ~/crl'
 
