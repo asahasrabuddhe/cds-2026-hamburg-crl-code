@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 #
-# rootless-demos.sh, demo driver for "The Reality of Rootless Containers"
+# demo.sh, demo driver for "The Reality of Rootless Containers"
 #
 # ONE script, TWO panes. The script detects which side it is running on and
 # runs the identical commands either way. That is the staging trick: the
 # audience sees the same input in both panes and different output, and you
 # never have to claim "trust me, the other side does X".
 #
-#   LEFT pane  (rootful):   sudo -i ; cd <here> ; ./rootless-demos.sh 3
-#   RIGHT pane (rootless):            cd <here> ; ./rootless-demos.sh 3
+#   LEFT pane  (rootful):   sudo -i ; cd ~/crl ; ./scripts/demo.sh 3
+#   RIGHT pane (rootless):            cd ~/crl ; ./scripts/demo.sh 3
 #
 # Every demo is independent and idempotent: run them in any order, repeat any
 # of them, skip any of them.
 #
-#   ./rootless-demos.sh check    # pre-flight, run this the morning of the talk
-#   ./rootless-demos.sh a        # Demo A, the Go program (rootless pane only)
-#   ./rootless-demos.sh 1..5     # a single demo
-#   ./rootless-demos.sh all      # rehearsal, with pauses
+#   ./scripts/demo.sh check    # pre-flight, run this the morning of the talk
+#   ./scripts/demo.sh a        # Demo A, the Go program (rootless pane only)
+#   ./scripts/demo.sh 1..5     # a single demo
+#   ./scripts/demo.sh all      # rehearsal, with pauses
 
 set -uo pipefail
 
@@ -338,9 +338,9 @@ demo_5() {
 demo_a() {
   banner "DEMO A: build the mapping by hand (nsdemo, in Go)"
 
-  local bin=./nsdemo/nsdemo
+  local bin=./nsdemo
   if [[ ! -x "$bin" ]]; then
-    printf '%s  Not built: (cd nsdemo && go build -o nsdemo .)%s\n' "$RED" "$RESET"
+    printf '%s  Not built: run make build%s\n' "$RED" "$RESET"
     return 1
   fi
   if [[ "$SIDE" == "ROOTFUL" ]]; then
