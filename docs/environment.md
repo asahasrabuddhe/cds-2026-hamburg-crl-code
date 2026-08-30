@@ -20,7 +20,8 @@ QEMU boots the stock Ubuntu cloud image with the stock Ubuntu kernel, so every
 result here is a result about Ubuntu. It also accepts kernel boot parameters,
 which is what the cgroup v1 variant needs. The cost is that it is slower than
 OrbStack and there is no automatic filesystem sharing, so code is copied in
-over SSH rather than mounted.
+over SSH rather than mounted. That is what `./qemu/vm.sh push` does, and it has
+to be run before the demos: they all expect the repository at `~/crl`.
 
 ## The three variants
 

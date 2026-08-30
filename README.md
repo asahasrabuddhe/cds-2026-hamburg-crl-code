@@ -69,8 +69,12 @@ You need:
 
 ```bash
 make vm                 # boot and provision the primary VM, a few minutes
+make push               # copy this repo into ~/crl in the VM
 ./qemu/vm.sh ssh primary
 ```
+
+`push` is a separate step because QEMU shares no filesystem with the host. The
+demos all run from `~/crl`, and nothing else puts the code there.
 
 Then, inside the VM:
 
@@ -92,9 +96,12 @@ Three variants of one definition, differing only in provisioning.
 
 ```bash
 ./qemu/vm.sh up primary
+./qemu/vm.sh push primary
 ./qemu/vm.sh status
 ./qemu/vm.sh down
 ```
+
+`make push` targets `primary`. For the other two, `make push VARIANT=cgroupv1`.
 
 The `hardened` box exists because the sysctl is the argument. Ubuntu enables
 it by default, and with it enabled nothing in this repository works. Showing

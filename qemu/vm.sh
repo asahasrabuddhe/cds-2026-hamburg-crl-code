@@ -18,6 +18,7 @@
 #              that is the point: it is the proof for the twist.
 #
 #   ./qemu/vm.sh up primary
+#   ./qemu/vm.sh push primary
 #   ./qemu/vm.sh ssh primary
 #   ./qemu/vm.sh status
 #   ./qemu/vm.sh down [variant]
@@ -46,7 +47,7 @@ readonly KEY="crl_key"
 readonly GUEST_NET="192.168.76.0/24"
 readonly GUEST_GW="192.168.76.2"
 
-usage() { echo "usage: vm.sh {up|ssh|down|status} [primary|cgroupv1|hardened]" >&2; exit 2; }
+usage() { echo "usage: vm.sh {up|push|ssh|down|status} [primary|cgroupv1|hardened]" >&2; exit 2; }
 
 variant_port() {
   case "$1" in
@@ -257,8 +258,31 @@ status() {
   done
 }
 
+# The VM has no filesystem share, so the repository has to be copied in. tar
+# over ssh rather than rsync: the cloud image does not ship rsync, and
+# installing it at the venue would need a network the venue may not give you.
+# tar is in the base image and needs nothing at either end.
+#
+# ~/crl is replaced rather than merged, so a push always leaves the VM holding
+# exactly what the laptop holds. Run make build afterwards: the nsdemo binary
+# goes with it.
+push() {
+  local variant="${1:-primary}"
+  variant_port "$variant" >/dev/null   # rejects an unknown name before we dial
+  write_ssh_config
+
+  # qemu/ is excluded because it is several gigabytes of disk image, and .git/
+  # because nothing in the VM reads the history.
+  tar -cf - -C .. --exclude './.git' --exclude './qemu' . \
+    | ssh -F ssh_config "crl-$variant" \
+        'rm -rf ~/crl && mkdir -p ~/crl && tar -xf - -C ~/crl'
+
+  echo "pushed to crl-$variant:~/crl"
+}
+
 case "${1:-}" in
   up)     shift; up "${1:-primary}" ;;
+  push)   shift; push "${1:-primary}" ;;
   ssh)    shift; write_ssh_config; exec ssh -F ssh_config "crl-${1:-primary}" ;;
   down)   shift; down "$@" ;;
   status) status ;;

@@ -7,6 +7,7 @@ QEMU rather than OrbStack, and for the recorded versions.
 ./vm.sh up primary      # everything except the two cases below
 ./vm.sh up cgroupv1     # demo 4's second half
 ./vm.sh up hardened     # the twist
+./vm.sh push primary    # copy this repo into ~/crl in the VM
 ./vm.sh ssh primary
 ./vm.sh status
 ./vm.sh down            # all of them, or name one
@@ -14,6 +15,11 @@ QEMU rather than OrbStack, and for the recorded versions.
 
 First boot fetches a 590 MB cloud image and provisions for a few minutes.
 Later boots reuse the overlay disk.
+
+QEMU shares no filesystem with the host, so provisioning cannot put the code in
+the VM and `push` is not optional: `scripts/stage.sh` and every demo command
+expect the repository at `~/crl`. It replaces that directory rather than merging
+into it, so run `make build` afterwards.
 
 ## If a namespace demo fails
 

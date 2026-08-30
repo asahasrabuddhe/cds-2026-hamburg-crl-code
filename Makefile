@@ -1,4 +1,4 @@
-.PHONY: build check fmt vet test lint clean vm vm-v1 vm-hardened vm-down
+.PHONY: build check fmt vet test lint clean vm vm-v1 vm-hardened vm-down push
 
 BIN := nsdemo
 
@@ -44,3 +44,7 @@ vm-hardened:
 
 vm-down:
 	./qemu/vm.sh down
+
+# No filesystem share, so the code has to be copied in. See qemu/vm.sh.
+push:
+	./qemu/vm.sh push $(or $(VARIANT),primary)
