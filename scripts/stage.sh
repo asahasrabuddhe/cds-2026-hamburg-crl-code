@@ -8,11 +8,25 @@
 # the only difference is which pane I typed it in" and have it be obviously
 # true.
 #
-#   ./scripts/stage.sh            # build the session and attach
-#   ./scripts/stage.sh coldopen   # the two commands the talk opens with
+#   ./scripts/stage.sh            # build the session, detached
+#   ./scripts/stage.sh coldopen   # the commands the talk opens with
 #
-# The left pane is root. It asks for a password once, when you run this, and
-# not again in front of an audience.
+# The left pane is root. Cloud-init grants the demo user NOPASSWD:ALL, so the
+# sudo -i below never prompts. Build the session early anyway: a tmux that
+# comes up wrong is a problem you want seventy minutes before the talk, not
+# ninety seconds before it.
+#
+# Order on the day:
+#
+#   1. ./scripts/stage.sh          builds the session detached. Do this before
+#                                  you walk on.
+#   2. the cold open               in your plain full-width shell, NOT in tmux
+#   3. tmux attach -t talk         the split appears for the first time here
+#
+# Step 2 is deliberately outside tmux. The cold open is a single-pane
+# argument, one process seen from inside the container and from the host, so
+# it does not need the split and it reads better with the whole screen. Set
+# the bare terminal to 20pt too, not just the tmux one.
 
 set -uo pipefail
 
@@ -20,26 +34,42 @@ readonly SESSION="${SESSION:-talk}"
 readonly REPO_DIR="${REPO_DIR:-$HOME/crl}"
 readonly IMAGE="${IMAGE:-docker.io/library/alpine:3.20}"
 
-# The cold open. Two commands, ninety seconds, no slide up. The left pane
-# shows a container claiming to be root; the right pane shows the host
-# disagreeing about the very same process.
+# The cold open. Ninety seconds, no slide up, no tmux. One rootless shell at
+# full width. The container claims to be root and the host disagrees about
+# that very same process, and both of those facts have to land in the same
+# pane or the word "same" is doing work it has not earned. Splitting the
+# claim across two panes shows two processes and proves nothing.
 cold_open() {
   cat <<'CUE'
 
-  COLD OPEN, no slide up. Run these, then say the line.
+  COLD OPEN, no slide up, BEFORE you attach to tmux.
+  Your own shell, full width, rootless. Run these, then say the line.
 
-  RIGHT pane:
     podman run --rm -d --name whoami alpine sleep 300
+    podman ps --format '{{.Names}} runs {{.Command}}'
     podman exec whoami id
-    ps -eo user,pid,comm | grep -w sleep
-    cat /proc/<pid>/status | grep -E '^(Uid|Gid):'
+    pid=$(podman inspect whoami --format '{{.State.Pid}}')
+    ps -o user=,pid=,comm= -p $pid
+    grep -E '^(Uid|Gid):' /proc/$pid/status
+
+  Say 'the container NAMED whoami' out loud when you create it. Otherwise
+  'podman exec whoami id' reads as two commands, and alpine does ship a
+  real whoami binary for them to be wrong about.
+
+  The second line exists so the name is visibly a name. The pid line exists
+  so the number in the ps output is one they watched you derive.
 
   The line:
     "Same process. The container says root. The host says ajitem.
      Both of them are telling the truth, and the gap between those
      two answers is the entire subject of this talk."
 
-  Then slide 1.
+  Then: tmux attach -t talk, and slide 1.
+
+  The split appears for the first time on that attach, which is the point.
+  Up to here you have been arguing about one process. From here you are
+  comparing two privilege levels, and the layout should change when the
+  argument does.
 
 CUE
 }

@@ -114,8 +114,8 @@ identical commands either way, so the audience sees the same input and
 different output.
 
 ```bash
-# LEFT pane  (rootful)    sudo -i ; cd ~/crl ; ./scripts/demo.sh 3
-# RIGHT pane (rootless)             cd ~/crl ; ./scripts/demo.sh 3
+# LEFT pane  (rootful)    sudo -i ; cd ~ajitem/crl ; ./scripts/demo.sh 3
+# RIGHT pane (rootless)             cd ~/crl       ; ./scripts/demo.sh 3
 ```
 
 `ENGINE` and `IMAGE` are overridable, for example `ENGINE=docker ./scripts/demo.sh 2`.

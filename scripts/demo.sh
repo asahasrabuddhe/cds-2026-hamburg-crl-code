@@ -7,8 +7,11 @@
 # audience sees the same input in both panes and different output, and you
 # never have to claim "trust me, the other side does X".
 #
-#   LEFT pane  (rootful):   sudo -i ; cd ~/crl ; ./scripts/demo.sh 3
-#   RIGHT pane (rootless):            cd ~/crl ; ./scripts/demo.sh 3
+#   LEFT pane  (rootful):   sudo -i ; cd ~ajitem/crl ; ./scripts/demo.sh 3
+#   RIGHT pane (rootless):            cd ~/crl       ; ./scripts/demo.sh 3
+#
+# `sudo -i` is a login shell, so ~ is /root and the repo is not there. The
+# repo lives in the demo user's home, which is where `vm.sh push` put it.
 #
 # Every demo is independent and idempotent: run them in any order, repeat any
 # of them, skip any of them.
@@ -115,6 +118,42 @@ run() {
 
 ctr() { run "$ENGINE" "$@"; }
 
+# Like run(), but also leaves stdout in $CAPTURED for the next command to
+# consume. Capturing silently into a variable means the audience meets the
+# value for the first time already substituted into a later command line,
+# where it reads as a magic number. Show the command that produced it.
+# stderr is deliberately left unredirected so a failure is still visible.
+CAPTURED=""
+run_capture() {
+  printf '\n%s$ %s%s\n' "$SIDE_COLOUR" "$*" "$RESET"
+  CAPTURED="$("$@")"
+  printf '%s\n' "$CAPTURED" | sed 's/^/  /'
+}
+
+ctr_capture() { run_capture "$ENGINE" "$@"; }
+
+# Echo a command and run it, but swallow stdout. For a setup step whose output
+# is noise and whose command line is not: `run -d` prints a 64 character
+# container ID nobody can read from row 12, but hiding the whole line means a
+# name like 'whoami' turns up later with no antecedent.
+run_quiet() {
+  printf '\n%s$ %s%s\n' "$SIDE_COLOUR" "$*" "$RESET"
+  "$@" >/dev/null
+}
+
+# Remove containers without the ten second stall. `docker rm -f` is SIGKILL
+# outright, but `podman rm -f` sends SIGTERM first and waits out the stop
+# timeout. Our containers run `sleep` as PID 1, and the kernel discards a
+# default-disposition signal sent to a namespace init, so that SIGTERM can
+# never land: the rootless pane sat there for ten seconds and then printed a
+# warning. `-t 0` skips straight to SIGKILL; docker has no -t on rm.
+ctr_rm() {
+  case "$ENGINE" in
+    *podman*) "$ENGINE" rm -f -t 0 "$@" ;;
+    *)        "$ENGINE" rm -f "$@" ;;
+  esac
+}
+
 # The scratch directory is per-uid. Sharing one path between the panes meant
 # the rootful pane created it owned by root, and the rootless pane could then
 # neither remove it nor write into it, so demo 3(c) collapsed on the right
@@ -122,11 +161,30 @@ ctr() { run "$ENGINE" "$@"; }
 SCRATCH="/tmp/rootless-demo-$(id -u)"
 readonly SCRATCH
 
+# Demo 2 needs a real block device that nothing has mounted yet. It used to
+# hardcode /dev/sda1, which does not exist on this box at all: qemu/vm.sh
+# attaches both disks with if=virtio, so they come up as /dev/vda and
+# /dev/vdb. The rootful pane was therefore printing DENIED for a missing file
+# while the note next to it claimed the mount had succeeded, which is the
+# opposite of the point the demo is making. Discover the device instead.
+#
+# Ask for three columns, not two. With NAME,MOUNTPOINT alone the first
+# unmounted row on this box is /dev/vda, the whole disk, which carries no
+# filesystem of its own and fails to mount for a third unrelated reason.
+# NAME,FSTYPE,MOUNTPOINT prints two fields for a device that has a filesystem
+# and no mountpoint, which is exactly what this demo wants, and three for one
+# that is already mounted. On the primary VM that selects /dev/vdb, the
+# cloud-init seed ISO, which is attached for the whole run and mounted for
+# none of it.
+host_block_device() {
+  lsblk -pnro NAME,FSTYPE,MOUNTPOINT 2>/dev/null | awk 'NF==2 {print $1; exit}'
+}
+
 reset_env() {
   # `rm -af` is podman-only; docker has no -a on rm, so the rootful pane was
   # silently not cleaning up and the second run hit a name conflict.
   case "$ENGINE" in
-    *podman*) "$ENGINE" rm -af >/dev/null 2>&1 ;;
+    *podman*) "$ENGINE" rm -af -t 0 >/dev/null 2>&1 ;;
     *) "$ENGINE" rm -f "$("$ENGINE" ps -aq 2>/dev/null)" >/dev/null 2>&1 ;;
   esac
   rm -rf "$SCRATCH" && mkdir -p "$SCRATCH"
@@ -199,12 +257,18 @@ demo_1() {
   reset_env
   banner "DEMO 1: the same process, two answers"
 
-  "$ENGINE" run -d --name whoami "$IMAGE" sleep 300 >/dev/null
+  run_quiet "$ENGINE" run -d --name whoami "$IMAGE" sleep 300
+  ctr ps --format '{{.Names}} runs {{.Command}}'
+  note "'whoami' is the container's NAME. The process inside it is sleep 300."
+  note "Nothing in this demo ever runs the whoami command."
+
   ctr exec whoami id
   note "The container is certain it is root. Both panes agree."
 
-  local pid
-  pid=$("$ENGINE" inspect whoami --format '{{.State.Pid}}')
+  ctr_capture inspect whoami --format '{{.State.Pid}}'
+  local pid="$CAPTURED"
+  note "That is the host PID of the container's PID 1. Same process, two numbers."
+
   run ps -o user=,pid=,comm= -p "$pid"
   run grep -E '^Uid:' "/proc/$pid/status"
 
@@ -218,7 +282,7 @@ demo_1() {
   note "Rootless: container 0 → host 1000 (you); container 1+ → 100000+."
   note "Rootful:  container 0 → host 0. No translation. No boundary."
 
-  "$ENGINE" rm -f whoami >/dev/null
+  ctr_rm whoami >/dev/null
 }
 
 # --------------------------------------- 2: capabilities are real, local ----
@@ -231,16 +295,31 @@ demo_2() {
     'mount -t tmpfs none /mnt && echo "tmpfs mount: OK"'
   note "Allowed on both sides, tmpfs carries FS_USERNS_MOUNT."
 
-  ctr run --rm --privileged "$IMAGE" sh -c \
-    'mount /dev/sda1 /mnt 2>&1 || echo "block mount: DENIED"'
+  say "  Pick a real block device, and show where it came from"
+  run lsblk -pnro NAME,FSTYPE,MOUNTPOINT
+
+  local dev
+  dev="$(host_block_device)"
+  if [[ -z "$dev" ]]; then
+    printf '%s  No unmounted block device found, skipping the mount beat.%s\n' \
+      "$RED" "$RESET"
+  else
+    note "Using $dev. A real host device, and nothing has it mounted."
+    ctr run --rm --privileged "$IMAGE" sh -c \
+      "mount $dev /mnt 2>&1 || echo 'block mount: DENIED'"
+  fi
 
   ctr run --rm --privileged "$IMAGE" sh -c \
     'mknod /dev/evil b 8 0 2>&1 && echo "mknod: OK" || echo "mknod: DENIED"'
+  note "8 and 0 are an arbitrary major and minor. The question is only whether"
+  note "the kernel lets you create a device node at all, not what it points to."
 
   if [[ "$SIDE" == "ROOTFUL" ]]; then
     note "--privileged means privileged. Both succeed. This is a host device."
   else
     note "--privileged grants everything your namespace holds. Devices are not in it."
+    note "Note the failure: not 'permission denied' but 'no such file'. Rootless"
+    note "--privileged never put the host's device nodes in your /dev to begin with."
   fi
 }
 
@@ -280,6 +359,9 @@ demo_3() {
 
   say "  (c) the honest half, your own data is in range either way"
   echo "aws_secret_access_key = not-a-real-key" > "$SCRATCH/credentials"
+  run cat "$SCRATCH/credentials"
+  note "Planted on the host, in your own directory, by you. No container yet."
+
   ctr run --rm -v "$SCRATCH":/host:ro "$IMAGE" cat /host/credentials
   note "For a laptop or a CI runner, this is most of what an attacker wanted."
 }
@@ -327,7 +409,8 @@ demo_5() {
   if [[ "$SIDE" == "ROOTLESS" ]]; then
     say "  Which network helpers are available"
     run sh -c 'command -v pasta slirp4netns || true'
-    note "Podman $(podman --version 2>/dev/null | cut -d\  -f3) defaults to slirp4netns here."
+    run "$ENGINE" --version
+    note "That version defaults to slirp4netns here."
     note "pasta became the default in Podman 5.0, and is opt-in via --network=pasta."
   fi
   note "Throughput numbers come from scripts/bench.sh, run beforehand. See the slide."
