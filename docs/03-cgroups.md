@@ -13,7 +13,7 @@ The mechanism is delegation. systemd starts a `user@<uid>.service` slice and han
 ```console
 $ systemctl show user@$(id -u).service -p Delegate -p DelegateControllers
 $ cat /sys/fs/cgroup/user.slice/user-$(id -u).slice/cgroup.controllers
-cpu io memory pids
+cpu memory pids
 ```
 
 ## How to run it

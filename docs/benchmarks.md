@@ -40,14 +40,14 @@ fuse-overlayfs, which the kernel has allowed inside a user namespace since
 fuse-overlayfs years does not apply here. The cold pull and extract row uses
 `golang:1.27.0`, which is 927 MB on disk and matches the Go the VM installs.
 
-**The time on this row has not been re-measured and slide 32 is still carrying
-the old one.** The 12 seconds on the slide was recorded against `golang:1.23`
-on a fast link. On a slower link `golang:1.27.0` reports 93 seconds, and
-`golang:1.23` re-pulled on that same slow link reports 69 seconds. That control
-is the point: the row is bandwidth-bound, so it says more about the network
-than about the storage driver. Re-run `./scripts/bench.sh build` on the link
-you measured the original on and put that number on the slide. The 927 MB is a
-property of the image and does not move.
+**Slide 32 carries the size and no time, and that is deliberate.** The 12
+seconds it used to show was recorded against `golang:1.23` on a fast link. On a
+slower link `golang:1.27.0` reports 93 seconds, and `golang:1.23` re-pulled on
+that same slow link reports 69 seconds. That control is the point: the row is
+bandwidth-bound, so it says more about the network than about the storage
+driver, and no single figure for it is defensible without also naming the link.
+The 927 MB is a property of the image and does not move, so that is what the
+slide shows.
 
 There is deliberately no native-overlay against fuse-overlayfs comparison in
 this document. Measuring it correctly needs a separate store per driver and a

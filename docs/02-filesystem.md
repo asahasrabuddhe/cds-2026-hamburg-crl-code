@@ -15,7 +15,7 @@ $ ./scripts/demo.sh 2        # right pane, rootless
 # ./scripts/demo.sh 2        # left pane, after sudo -i
 ```
 
-The script runs three commands identically in both panes: mount a tmpfs, mount `/dev/sda1`, and `mknod /dev/evil b 8 0`. The last two run with `--privileged` on purpose.
+The script runs three commands identically in both panes: mount a tmpfs, mount a real unmounted block device, and `mknod /dev/evil b 8 0`. The last two run with `--privileged` on purpose. The device is discovered rather than hardcoded: `lsblk -pnro NAME,FSTYPE,MOUNTPOINT` and the first row with a filesystem and no mountpoint, which on the primary VM is `/dev/vdb`, the cloud-init seed ISO.
 
 ## Expected output
 
