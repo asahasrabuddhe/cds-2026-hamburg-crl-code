@@ -18,7 +18,7 @@ set -uo pipefail
 readonly IMAGE="${IMAGE:-docker.io/library/alpine:3.20}"
 readonly IPERF_IMAGE="${IPERF_IMAGE:-docker.io/networkstatic/iperf3:latest}"
 readonly DURATION="${DURATION:-10}"
-readonly BENCH_IMAGE="${BENCH_IMAGE:-docker.io/library/golang:1.23}"
+readonly BENCH_IMAGE="${BENCH_IMAGE:-docker.io/library/golang:1.27.0}"
 
 row()  { printf '  %-34s %s\n' "$1" "$2"; }
 head_() { printf '\n== %s ==\n' "$1"; }
