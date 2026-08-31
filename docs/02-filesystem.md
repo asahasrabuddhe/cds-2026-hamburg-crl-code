@@ -15,11 +15,11 @@ $ ./scripts/demo.sh 2        # right pane, rootless
 # ./scripts/demo.sh 2        # left pane, after sudo -i
 ```
 
-The script runs three commands identically in both panes: mount a tmpfs, mount a real unmounted block device, and `mknod /dev/evil b 8 0`. The last two run with `--privileged` on purpose. The device is discovered rather than hardcoded: `lsblk -pnro NAME,FSTYPE,MOUNTPOINT` and the first row with a filesystem and no mountpoint, which on the primary VM is `/dev/vdb`, the cloud-init seed ISO.
+The script runs three commands identically in both panes: mount a tmpfs, mount a real unmounted block device, and `mknod /dev/evil b 8 0`. All three run with `--privileged` on purpose, so the flags are identical and the pane is the only variable. A default container holds no CAP_SYS_ADMIN in either engine, and `--cap-add SYS_ADMIN` alone is not enough on the rootful side, where both engines confine the container with an AppArmor profile that denies `mount(2)` whatever capabilities it holds. The device is discovered rather than hardcoded: `lsblk -pnro NAME,FSTYPE,MOUNTPOINT` and the first row with a filesystem and no mountpoint, which on the primary VM is `/dev/vdb`, the cloud-init seed ISO.
 
 ## Expected output
 
-Both panes print `tmpfs mount: OK`. The left pane then mounts the block device and prints `mknod: OK`. The right pane prints `block mount: DENIED` and `mknod: DENIED`.
+Both panes print `tmpfs mount: OK`. The left pane then prints `block mount: OK` and `mknod: OK`. The right pane prints `block mount: DENIED` and `mknod: DENIED`.
 
 ## What it proves
 

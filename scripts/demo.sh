@@ -154,6 +154,26 @@ ctr_rm() {
   esac
 }
 
+# Podman and Docker disagree about the shape of `info --format`, and the two
+# panes run different engines: the VM installs both and the rootful side picks
+# Docker off PATH. A single template therefore prints a Go error in one pane.
+# Demo 4 is the one that matters, because it opens the cgroups demo in front of
+# the room, and its version line was arriving as
+# "can't evaluate field Host in type system.dockerInfo" with no cgroup version
+# at all. Ask each engine in its own language instead.
+#
+# The redirect has to sit here rather than on the run() call: run() merges
+# stderr into stdout before piping to sed, so a caller's 2>/dev/null has
+# nothing left to suppress.
+ctr_cgroup_info() {
+  case "$ENGINE" in
+    *podman*) run "$ENGINE" info --format \
+                'cgroups={{.Host.CgroupsVersion}} controllers={{.Host.CgroupControllers}}' ;;
+    *)        run "$ENGINE" info --format \
+                'cgroups={{.CgroupVersion}} driver={{.CgroupDriver}}' ;;
+  esac
+}
+
 # The scratch directory is per-uid. Sharing one path between the panes meant
 # the rootful pane created it owned by root, and the rootless pane could then
 # neither remove it nor write into it, so demo 3(c) collapsed on the right
@@ -236,9 +256,7 @@ demo_check() {
     remove_backdoor
   fi
 
-  run "$ENGINE" info --format \
-    'cgroups={{.Host.CgroupsVersion}} controllers={{.Host.CgroupControllers}}' \
-    2>/dev/null || run "$ENGINE" info --format '{{.CgroupDriver}} {{.CgroupVersion}}'
+  ctr_cgroup_info
 
   say "Images must already be local, no pulls on stage"
   run "$ENGINE" images
@@ -291,9 +309,22 @@ demo_2() {
   reset_env
   banner "DEMO 2. CAP_SYS_ADMIN, and what it is worth"
 
-  ctr run --rm "$IMAGE" sh -c \
-    'mount -t tmpfs none /mnt && echo "tmpfs mount: OK"'
+  # --privileged, and not a bare `run`, because a default container holds no
+  # CAP_SYS_ADMIN in either engine: this line used to print "permission denied
+  # (are you root?)" in BOTH panes while the note under it claimed the mount
+  # was allowed in both, which is the exact claim S27 exists to make.
+  #
+  # --cap-add SYS_ADMIN is not enough either, and the reason is worth knowing.
+  # It works rootless, but on the rootful side both engines confine the
+  # container with an AppArmor profile that denies mount(2) whatever
+  # capabilities it holds, so the left pane failed and the right one passed,
+  # backwards from the point. --privileged drops that confinement, and it also
+  # makes all three commands in this demo take identical flags, which leaves
+  # the pane as the only variable.
+  ctr run --rm --privileged "$IMAGE" sh -c \
+    'mount -t tmpfs none /mnt && echo "tmpfs mount: OK" || echo "tmpfs mount: DENIED"'
   note "Allowed on both sides, tmpfs carries FS_USERNS_MOUNT."
+  note "--privileged on all three, so the only variable left is the pane."
 
   say "  Pick a real block device, and show where it came from"
   run lsblk -pnro NAME,FSTYPE,MOUNTPOINT
@@ -306,7 +337,7 @@ demo_2() {
   else
     note "Using $dev. A real host device, and nothing has it mounted."
     ctr run --rm --privileged "$IMAGE" sh -c \
-      "mount $dev /mnt 2>&1 || echo 'block mount: DENIED'"
+      "mount $dev /mnt 2>&1 && echo 'block mount: OK' || echo 'block mount: DENIED'"
   fi
 
   ctr run --rm --privileged "$IMAGE" sh -c \
@@ -318,8 +349,9 @@ demo_2() {
     note "--privileged means privileged. Both succeed. This is a host device."
   else
     note "--privileged grants everything your namespace holds. Devices are not in it."
-    note "Note the failure: not 'permission denied' but 'no such file'. Rootless"
-    note "--privileged never put the host's device nodes in your /dev to begin with."
+    note "Read the errors: the container is uid 0 and is still refused both times."
+    note "The capability is checked against the namespace that owns the device,"
+    note "and this one does not own it."
   fi
 }
 
@@ -372,9 +404,7 @@ demo_4() {
   reset_env
   banner "DEMO 4: what you lose: cgroup limits"
 
-  run "$ENGINE" info --format \
-    'cgroups={{.Host.CgroupsVersion}} controllers={{.Host.CgroupControllers}}' \
-    2>/dev/null || true
+  ctr_cgroup_info
 
   say "  Ask for a limit, then ask the container whether it got one"
   ctr run --rm --memory=64m "$IMAGE" sh -c \
@@ -392,8 +422,6 @@ demo_5() {
   reset_env
   banner "DEMO 5: userspace networking, and its bill"
 
-  run "$ENGINE" info --format 'network backend: {{.Host.NetworkBackend}}' 2>/dev/null || true
-
   say "  Publish a privileged port"
   ctr run --rm -p 80:80 "$IMAGE" true 2>&1 || true
 
@@ -408,7 +436,7 @@ demo_5() {
   # conference wifi proves nothing and takes minutes you do not have.
   if [[ "$SIDE" == "ROOTLESS" ]]; then
     say "  Which network helpers are available"
-    run sh -c 'command -v pasta slirp4netns || true'
+    run sh -c 'command -v pasta; command -v slirp4netns'
     run "$ENGINE" --version
     note "That version defaults to slirp4netns here."
     note "pasta became the default in Podman 5.0, and is opt-in via --network=pasta."
