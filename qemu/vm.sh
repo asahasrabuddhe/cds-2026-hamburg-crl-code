@@ -271,13 +271,21 @@ push() {
   variant_port "$variant" >/dev/null   # rejects an unknown name before we dial
   write_ssh_config
 
-  # qemu/ is excluded because it is several gigabytes of disk image, and .git/
-  # because nothing in the VM reads the history. The two --no- flags drop the
-  # macOS extended attributes, which GNU tar in the guest cannot read and warns
-  # about once per file. Warnings that mean nothing are worse than no output at
-  # all when you run this in front of a room.
-  tar --no-xattrs --no-mac-metadata -cf - -C .. \
-      --exclude './.git' --exclude './qemu' . \
+  # The file list comes from git rather than from a hand-written exclude list.
+  # Everything heavy in qemu/ is already gitignored, so tracking is exactly the
+  # right filter: 120 KB of source crosses and 9.4 GB of disk image does not.
+  # An earlier version excluded qemu/ wholesale and broke `make check` in the
+  # guest, because the lint target shellchecks qemu/vm.sh and the file was not
+  # there.
+  #
+  # tar reads each path from the working tree, not from the index, so uncommitted
+  # edits do cross. A brand new file will not until it is at least git add'ed.
+  #
+  # The two --no- flags drop the macOS extended attributes, which GNU tar in the
+  # guest cannot read and warns about once per file. Warnings that mean nothing
+  # are worse than no output at all when you run this in front of a room.
+  git -C .. ls-files -z \
+    | tar --no-xattrs --no-mac-metadata -cf - -C .. --null -T - \
     | ssh -F ssh_config "crl-$variant" \
         'rm -rf ~/crl && mkdir -p ~/crl && tar -xf - -C ~/crl'
 
