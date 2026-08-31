@@ -10,10 +10,20 @@
 #   ./scripts/bench.sh            # everything
 #   ./scripts/bench.sh net        # just the iperf3 rows
 #
-# Rootful rows need root, so run the whole thing under sudo -i if you want the
-# comparison column filled in.
+# Rootful rows need root. Run the whole thing twice, once as yourself and once
+# under sudo -i, and take the rows whose label matches the column you are
+# filling in. Do not run it once under sudo and read every row as rootless:
+# under sudo every podman call in this file is a rootful one, including the
+# slirp4netns and pasta rows, which is why the labels below are derived from
+# the uid rather than written in by hand.
 
 set -uo pipefail
+
+if [[ $(id -u) -eq 0 ]]; then
+  readonly MODE="rootful"
+else
+  readonly MODE="rootless"
+fi
 
 readonly IMAGE="${IMAGE:-docker.io/library/alpine:3.20}"
 readonly IPERF_IMAGE="${IPERF_IMAGE:-docker.io/networkstatic/iperf3:latest}"
@@ -33,8 +43,14 @@ bench_net() {
     return
   fi
 
-  iperf3 --server --daemon --port 5201 >/dev/null 2>&1
-  sleep 1
+  # Only stop a server we started. Killing by pattern unconditionally took out
+  # a pre-existing iperf3 that someone else on the box was using.
+  local started_server=0
+  if ! pgrep -f 'iperf3 --server' >/dev/null 2>&1; then
+    iperf3 --server --daemon --port 5201 >/dev/null 2>&1
+    started_server=1
+    sleep 1
+  fi
 
   local host_ip gw
   host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')"
@@ -48,26 +64,27 @@ bench_net() {
   # itself and connecting there is refused. Reaching the host under pasta
   # needs --map-gw and the gateway address.
   local tcp
-  tcp="$(iperf_in slirp4netns '' host.containers.internal)"
-  row "rootless slirp4netns, TCP" "${tcp:-failed}"
+  tcp="$(iperf_in slirp4netns host.containers.internal)"
+  row "$MODE slirp4netns, TCP" "${tcp:-failed}"
 
-  tcp="$(iperf_in 'pasta:--map-gw' '' "$gw")"
-  row "rootless pasta (--map-gw), TCP" "${tcp:-failed}"
+  tcp="$(iperf_in 'pasta:--map-gw' "$gw")"
+  row "$MODE pasta (--map-gw), TCP" "${tcp:-failed}"
 
   if [[ $(id -u) -eq 0 ]]; then
-    tcp="$(iperf_in bridge '' "$host_ip")"
+    tcp="$(iperf_in bridge "$host_ip")"
     row "rootful veth bridge, TCP" "${tcp:-failed}"
   else
     row "rootful veth bridge, TCP" "re-run this under sudo -i"
   fi
 
-  pkill -f 'iperf3 --server' 2>/dev/null
+  [[ $started_server -eq 1 ]] && pkill -f 'iperf3 --server' 2>/dev/null
+  return 0
 }
 
 # iperf_in runs the iperf3 client inside a container on a given network and
 # prints the receiver-side throughput.
 iperf_in() {
-  local network="$1" _unused="$2" target="$3"
+  local network="$1" target="$2"
   podman run --rm --network="$network" "$IPERF_IMAGE" \
     -c "$target" -t "$DURATION" -f g 2>/dev/null \
     | awk '/receiver/ {print $(NF-2), $(NF-1)}'
@@ -76,7 +93,7 @@ iperf_in() {
 # ------------------------------------------------------------ cold start ---
 
 bench_start() {
-  head_ "container start to echo, cold, best of 5"
+  head_ "container start to echo, cold, best of 5 ($MODE)"
 
   podman rmi "$IMAGE" >/dev/null 2>&1
   podman pull "$IMAGE" >/dev/null 2>&1
@@ -89,7 +106,7 @@ bench_start() {
     ms=$(( (end - start) / 1000000 ))
     [[ -z "$best" || $ms -lt $best ]] && best=$ms
   done
-  row "rootless start to echo" "${best} ms"
+  row "start to echo" "${best} ms"
 }
 
 # ----------------------------------------------------------------- build ---
@@ -102,7 +119,7 @@ bench_start() {
 # with a dedicated --root for each driver and check the image was genuinely
 # removed first.
 bench_build() {
-  head_ "cold pull and extract, $BENCH_IMAGE"
+  head_ "cold pull and extract, $BENCH_IMAGE ($MODE)"
 
   local driver
   driver="$(podman info --format '{{.Store.GraphDriverName}}' 2>/dev/null)"
