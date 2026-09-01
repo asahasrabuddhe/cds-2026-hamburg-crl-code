@@ -18,9 +18,9 @@ you intend to talk about.
 
 | Path | Throughput | Relative |
 |---|---|---|
-| Rootful, veth bridge | 125 Gbit/s | 1.00 |
-| Rootless, pasta | 83.6 Gbit/s | 0.67 |
-| Rootless, slirp4netns | 28.1 Gbit/s | 0.22 |
+| Rootful, veth bridge | 128 Gbit/s | 1.00 |
+| Rootless, pasta | 82.3 Gbit/s | 0.64 |
+| Rootless, slirp4netns | 28.4 Gbit/s | 0.22 |
 
 The shape is the finding: pasta costs about a third against a veth pair, and
 slirp4netns costs about four fifths. Both are real, and the gap between the
@@ -30,7 +30,7 @@ two rootless options is larger than most people expect.
 
 | Path | Time |
 |---|---|
-| Rootless Podman | 191 ms |
+| Rootless Podman | 193 ms |
 
 ## Filesystem
 
